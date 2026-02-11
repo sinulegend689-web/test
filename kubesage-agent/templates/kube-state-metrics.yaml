@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "mychart.fullname" . }}-ksm
+  labels:
+    {{- include "mychart.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "mychart.fullname" . }}-ksm
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "nodes", "pods", "services", "resourcequotas", "replicationcontrollers", "limitranges", "persistentvolumeclaims", "persistentvolumes", "namespaces", "endpoints"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "daemonsets", "deployments", "replicasets"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mychart.fullname" . }}-ksm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "mychart.fullname" . }}-ksm
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mychart.fullname" . }}-ksm
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mychart.fullname" . }}-ksm
+  labels:
+    app: kube-state-metrics
+    {{- include "mychart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-state-metrics
+      {{- include "mychart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: kube-state-metrics
+        {{- include "mychart.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "mychart.fullname" . }}-ksm
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.9.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http-metrics
+            - containerPort: 8081
+              name: telemetry
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mychart.fullname" . }}-ksm
+  labels:
+    app: kube-state-metrics
+    {{- include "mychart.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: http-metrics
+      port: 8080
+      targetPort: http-metrics
+    - name: telemetry
+      port: 8081
+      targetPort: telemetry
+  selector:
+    app: kube-state-metrics
+    {{- include "mychart.selectorLabels" . | nindent 4 }}

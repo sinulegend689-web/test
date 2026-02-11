@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-operator  # The exact name the error is asking for
+  namespace: {{ .Release.Namespace }}  # <--- CHANGED
+  labels:
+    app: trivy-operator
+---
+# Link this new SA to your EXISTING ClusterRole so it has permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trivy-operator-bridge-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: trivy-operator
+    namespace: {{ .Release.Namespace }}  # <--- CHANGED
+roleRef:
+  kind: ClusterRole
+  # This matches the ClusterRole your chart already created
+  name: onboarding-release-onboarding-chart-trivy-operator
+  apiGroup: rbac.authorization.k8s.io

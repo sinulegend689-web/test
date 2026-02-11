@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server
+  labels:
+    app: metrics-server
+    {{- include "mychart.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: metrics-server
+    {{- include "mychart.selectorLabels" . | nindent 4 }}

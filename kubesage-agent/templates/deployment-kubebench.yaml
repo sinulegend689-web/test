@@ -1,0 +1,153 @@
+{{- include "requiredValues" . -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "mychart.fullname" . }}-kube-bench-monitor
+  namespace: {{ include "mychart.namespace" . }}
+  labels:
+    {{- include "mychart.labels" . | nindent 4 }}
+    app: kube-bench
+spec:
+  selector:
+    matchLabels:
+      {{- include "mychart.selectorLabels" . | nindent 6 }}
+      app: kube-bench
+  template:
+    metadata:
+      labels:
+        {{- include "mychart.selectorLabels" . | nindent 8 }}
+        app: kube-bench
+    spec:
+      hostPID: true
+      # Master Node Tolerations
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      
+      restartPolicy: Always
+      containers:
+        - name: kube-bench
+          image: aquasec/kube-bench:latest
+          command: ["/bin/sh", "-c"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          args: 
+            - |
+              # SETTING: Scan every 1 Hour (60 seconds) to save CPU
+              INTERVAL=60
+              
+              while true; do
+                echo "{\"status\": \"scan_started\", \"node\": \"$NODE_NAME\", \"message\": \"Starting kube-bench scan on $NODE_NAME...\"}"
+                
+                # --- UNIVERSAL DETECTION LOGIC START ---
+                KB_FLAGS=""
+                
+                # 1. Check for K3s
+                if [ -d /var/lib/rancher/k3s ]; then
+                   echo "Detected K3s. Forcing K3s Benchmark."
+                   KB_FLAGS="--benchmark k3s-cis-1.24"
+                
+                # 2. Check for RKE2
+                elif [ -d /var/lib/rancher/rke2 ]; then
+                   echo "Detected RKE2. Forcing RKE2 Benchmark."
+                   KB_FLAGS="--benchmark rke2-cis-1.24"
+
+                # 3. Check for MicroK8s (Snap path)
+                elif [ -d /var/snap/microk8s ]; then
+                   echo "Detected MicroK8s. Forcing MicroK8s Benchmark."
+                   # Note: kube-bench usually auto-detects this if /var/snap is mounted, 
+                   # but we force it here to be safe if specific version logic fails.
+                   KB_FLAGS="--benchmark cis-1.24-microk8s" 
+
+                # 4. Check for OpenShift (Origin path)
+                elif [ -d /etc/origin ]; then
+                   echo "Detected OpenShift. Forcing OpenShift Benchmark."
+                   KB_FLAGS="--benchmark rh-1.4"
+                
+                # 5. Fallback to Auto-Detect (Standard/Cloud/EKS/GKE/AKS)
+                else
+                   echo "Detected Standard/Cloud Cluster. Using Auto-Detection."
+                fi
+                # --- UNIVERSAL DETECTION LOGIC END ---
+
+                # Run Scan with the detected flags
+                kube-bench $KB_FLAGS --json | jq --unbuffered -c --arg node "$NODE_NAME" '.Controls[].tests[].results[] | {Node: $node, ID: .test_number, Problem: .test_desc, Status: .status, Solution: .remediation}'
+                
+                echo "{\"status\": \"scan_completed\", \"node\": \"$NODE_NAME\", \"message\": \"Scan finished, waiting ${INTERVAL}s...\"}"
+                sleep $INTERVAL; 
+              done
+          volumeMounts:
+            - name: var-lib-rancher 
+              mountPath: /var/lib/rancher
+              readOnly: true
+            - name: var-snap            
+              mountPath: /var/snap
+              readOnly: true
+            - name: etc-origin          
+              mountPath: /etc/origin
+              readOnly: true
+            - name: etc-systemd
+              mountPath: /etc/systemd
+              readOnly: true
+            - name: etc-kubernetes
+              mountPath: /etc/kubernetes
+              readOnly: true
+            - name: lib-systemd
+              mountPath: /lib/systemd
+              readOnly: true
+            - name: usr-lib
+              mountPath: /usr/lib/systemd
+              readOnly: true
+            - name: var-lib-etcd
+              mountPath: /var/lib/etcd
+              readOnly: true
+            - name: var-lib-kubelet
+              mountPath: /var/lib/kubelet
+              readOnly: true
+            - name: etc-passwd
+              mountPath: /etc/passwd
+              readOnly: true
+            - name: etc-group
+              mountPath: /etc/group
+              readOnly: true
+      volumes:
+        - name: var-lib-rancher
+          hostPath:
+            path: "/var/lib/rancher"
+        - name: var-snap                
+          hostPath:
+            path: "/var/snap"
+        - name: etc-origin              
+          hostPath:
+            path: "/etc/origin"
+        - name: etc-systemd
+          hostPath:
+            path: "/etc/systemd"
+        - name: etc-kubernetes
+          hostPath:
+            path: "/etc/kubernetes"
+        - name: lib-systemd
+          hostPath:
+            path: "/lib/systemd"
+        - name: usr-lib
+          hostPath:
+            path: "/usr/lib/systemd"
+        - name: var-lib-etcd
+          hostPath:
+            path: "/var/lib/etcd"
+        - name: var-lib-kubelet
+          hostPath:
+            path: "/var/lib/kubelet"
+        - name: etc-passwd
+          hostPath:
+            path: "/etc/passwd"
+        - name: etc-group
+          hostPath:
+            path: "/etc/group"

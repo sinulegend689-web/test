@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mychart.fullname" . }}-alloy-config
+  labels:
+    app: alloy-scraper
+    {{- include "mychart.labels" . | nindent 4 }}
+data:
+  config.alloy: |
+    // 1. Scrape OpenCost
+    prometheus.scrape "opencost" {
+      targets = [{"__address__" = "{{ include "mychart.fullname" . }}-opencost.{{ .Release.Namespace }}.svc.cluster.local:9003"}]
+      scrape_interval = "60s"
+      metrics_path    = "/metrics"
+      forward_to      = [prometheus.remote_write.central.receiver]
+    }
+
+    // 2. Scrape Kepler
+    prometheus.scrape "kepler" {
+      targets = [{"__address__" = "{{ .Release.Name }}-kepler.{{ .Release.Namespace }}.svc.cluster.local:9102"}]
+      scrape_interval = "60s"
+      metrics_path    = "/metrics"
+      forward_to      = [prometheus.remote_write.central.receiver]
+    }
+
+    // 3. Scrape Trivy Operator
+    prometheus.scrape "trivy_operator" {
+      targets = [{"__address__" = "{{ include "mychart.fullname" . }}-trivy-operator.{{ .Release.Namespace }}.svc.cluster.local:80"}]
+      scrape_interval = "60s"
+      scrape_timeout  = "60s"
+      metrics_path    = "/metrics"
+      forward_to      = [prometheus.remote_write.central.receiver]
+    }
+
+    // 4. Remote Write Configuration (Output)
+    prometheus.remote_write "central" {
+      endpoint {
+        url = "{{ .Values.prometheusUrl }}/api/v1/write"
+        tls_config {
+          insecure_skip_verify = true
+        }
+      }
+      external_labels = { 
+        cluster  = "{{ .Values.clusterName }}", 
+        username = "{{ .Values.username }}",  
+      }
+    }

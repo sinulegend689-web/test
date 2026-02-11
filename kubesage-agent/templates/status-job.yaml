@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mychart.fullname" . }}-status-updater
+  labels:
+    {{- include "mychart.labels" . | nindent 4 }}
+  # REMOVED ANNOTATIONS: Helm will no longer block/wait on this job
+spec:
+  # Added backoffLimit so it doesn't retry forever if the network fails
+  backoffLimit: 2 
+  template:
+    metadata:
+      labels:
+        app: status-updater
+        {{- include "mychart.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "mychart.serviceAccountName" . }}
+      containers:
+      - name: status-updater
+        image: curlimages/curl:latest
+        imagePullPolicy: IfNotPresent
+        # The script remains the same, but Helm won't care if it fails
+        command: ["/bin/sh", "/scripts/update-status.sh"]
+        volumeMounts:
+        - name: script-volume
+          mountPath: /scripts
+      volumes:
+      - name: script-volume
+        configMap:
+          name: {{ include "mychart.fullname" . }}-status-script
+          defaultMode: 0755

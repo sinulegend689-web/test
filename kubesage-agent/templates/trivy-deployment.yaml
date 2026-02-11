@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mychart.fullname" . }}-trivy-operator
+  labels:
+    app: trivy-operator
+    {{- include "mychart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-operator
+      {{- include "mychart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: trivy-operator
+        {{- include "mychart.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "mychart.fullname" . }}-trivy-operator
+      containers:
+        - name: trivy-operator
+          image: mirror.gcr.io/aquasec/trivy-operator:0.29.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPERATOR_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_TARGET_NAMESPACES
+              value: ""
+            - name: OPERATOR_METRICS_VULN_ID_ENABLED
+              value: "true"
+            - name: OPERATOR_SCAN_JOB_SERVICE_ACCOUNT
+              value: "{{ include "mychart.fullname" . }}-trivy-operator"
+            - name: OPERATOR_EXPOSED_SECURITY_ISSUES
+              value: "MEDIUM,HIGH,CRITICAL"
+            - name: OPERATOR_VULNERABILITY_SCANNER_ENABLED
+              value: "true"
+            - name: OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED
+              value: "false"
+            - name: OPERATOR_LOG_LEVEL
+              value: "INFO"
+            - name: OPERATOR_EXCLUDE_NAMESPACES
+              value: {{ include "mychart.namespace" . | quote }}     
+            # --- FIX STARTS HERE ---
+            # 1. Health Probe listens on 9090 (Internal check)
+            - name: OPERATOR_HEALTH_PROBE_BIND_ADDRESS
+              value: ":9090"
+            
+            # 2. Metrics listen on 8080 (External scraping)
+            - name: OPERATOR_METRICS_BIND_ADDRESS
+              value: ":8080"
+            # --- FIX ENDS HERE ---
+
+          ports:
+            - name: metrics
+              containerPort: 8080
+          
+          # 3. Update Probes to check the new Health Port (9090)
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trivy-operator/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "mychart.fullname" . }}-trivy-config

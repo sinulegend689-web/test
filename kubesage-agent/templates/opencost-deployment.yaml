@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mychart.fullname" . }}-opencost
+  labels:
+    app: opencost
+    {{- include "mychart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencost
+      {{- include "mychart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: opencost
+        {{- include "mychart.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9003"
+    spec:
+      serviceAccountName: {{ include "mychart.serviceAccountName" . }}
+      containers:
+        - name: opencost
+          image: ghcr.io/opencost/opencost:1.114.0
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            # 1. Map Global Cluster Name to OpenCost ID
+            - name: CLUSTER_ID
+              value: {{ .Values.clusterName | quote }}
+            
+            # 2. Map Global Prometheus URL to OpenCost Endpoint
+            - name: PROMETHEUS_SERVER_ENDPOINT
+              value: "{{ .Values.prometheusUrl }}"
+            
+            # ADD THIS LINE:
+            - name: KUBECOST_NAMESPACE
+              value: {{ .Release.Namespace | quote }}            
+            # 3. Fixed Configuration
+            - name: INSECURE_SKIP_VERIFY
+              value: "true"
+            - name: CUSTOM_PRICING_ENABLED
+              value: "true"
+            - name: CLOUD_COST_ENABLED
+              value: "true"
+            # Often required to prevent crash if not using internal prometheus
+            - name: EMIT_KSM_V1_METRICS
+              value: "true"
+            - name: EMIT_KSM_V1_METRICS_ONLY
+              value: "true"
+          ports:
+            - containerPort: 9003
+              name: http
+

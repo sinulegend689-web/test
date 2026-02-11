@@ -1,0 +1,78 @@
+{{- $ms := lookup "rbac.authorization.k8s.io/v1" "ClusterRole" "" "system:aggregated-metrics-reader-{{ .Release.Namespace }}" }}
+{{- if not $ms }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server
+  labels:
+    app: metrics-server
+    {{- include "mychart.labels" . | nindent 4 }}
+---
+# Allow Metrics Server to read Pods/Nodes (Global)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:aggregated-metrics-reader-{{ .Release.Namespace }}
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server
+rules:
+- apiGroups: [""]
+  resources: ["nodes/metrics"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server:system:auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mychart.fullname" . }}-metrics-server
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "mychart.fullname" . }}-metrics-server
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mychart.fullname" . }}-metrics-server
+  namespace: {{ .Release.Namespace }}
+---
+# CRITICAL: This allows Metrics Server to verify API tokens
+# This MUST be in kube-system namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mychart.fullname" . }}-metrics-server-auth-reader
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mychart.fullname" . }}-metrics-server
+  namespace: {{ .Release.Namespace }}
+{{- end }}
